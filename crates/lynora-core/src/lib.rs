@@ -9,6 +9,7 @@ pub mod graphql;
 pub mod grpc;
 pub mod history;
 pub mod import;
+pub mod realtime;
 pub mod rest;
 pub mod vars;
 pub mod workspace;
@@ -29,6 +30,9 @@ pub use history::{HistoryEntry, HistoryStore, NewHistoryEntry};
 pub use import::openapi::import_openapi_json;
 pub use import::postman::import_postman_json;
 pub use import::proto::{import_proto_file, import_proto_source};
+pub use realtime::{
+    connect_websocket, listen_sse, RealtimeRequest, SseBody, WebSocketBody,
+};
 pub use rest::{prepare_request, send as send_rest, RestRequest, RestResponse};
 pub use vars::expand;
 pub use workspace::Workspace;

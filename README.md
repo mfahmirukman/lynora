@@ -1,8 +1,8 @@
 # Lynora
 
-Low-memory, Rust-based API workbench (Postman-like) for REST, GraphQL, and gRPC — desktop + web.
+Low-memory, Rust-based API workbench (Postman-like) for REST, GraphQL, gRPC, WebSocket, and SSE — desktop + web.
 
-**Status:** milestones **0.1–0.4** — core, desktop, web, optional sync, Linux/macOS bundle targets.
+**Status:** milestones **0.1–0.5** landed. Next: **1.0** polish.
 
 ## Docs
 
@@ -11,47 +11,29 @@ Low-memory, Rust-based API workbench (Postman-like) for REST, GraphQL, and gRPC 
 
 ## Develop
 
-### Core / sync tests
-
 ```bash
-cargo test -p lynora-core
-cargo test -p lynora-sync
-```
+cargo test -p lynora-core -p lynora-sync -p lynora-cli
 
-### Sync server (optional)
+# CLI — run a collection in CI
+cargo run -p lynora-cli -- run ./path/to/collection --env-file ./local.json --format json
 
-```bash
+# Sync server
 cargo run -p lynora-sync-server
-# listens on http://0.0.0.0:8787
+
+# Desktop
+cd apps/lynora-desktop && npm install && npm run tauri dev
+
+# Web
+cd apps/lynora-web && npm install && npm run dev
 ```
-
-### Desktop (Linux / macOS)
-
-```bash
-cd apps/lynora-desktop
-npm install
-npm run tauri dev
-```
-
-### Web
-
-```bash
-cd apps/lynora-web
-npm install
-npm run dev
-# http://localhost:5173
-```
-
-Browser supports REST & GraphQL; gRPC remains desktop-only in 0.4.
 
 ### Installers
 
 ```bash
-cd apps/lynora-desktop
-npm run tauri build
+cd apps/lynora-desktop && npm run tauri build
 ```
 
-Configured bundle targets: **deb**, **AppImage** (Linux), **dmg** / **app** (macOS).
+Targets: deb, AppImage, dmg/app.
 
 ## License
 

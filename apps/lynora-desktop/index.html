@@ -47,6 +47,8 @@
               <option value="rest">REST</option>
               <option value="graphql">GraphQL</option>
               <option value="grpc">gRPC</option>
+              <option value="websocket">WebSocket</option>
+              <option value="sse">SSE</option>
             </select>
             <select id="method">
               <option>GET</option>
@@ -111,6 +113,24 @@
             <label class="block-label">Message JSON</label>
             <textarea id="grpc-message" rows="8" placeholder='{"name":"Ada"}'></textarea>
           </div>
+          <div id="ws-pane" class="hidden">
+            <label class="block-label">Outbound message (optional)</label>
+            <textarea id="ws-message" rows="4" placeholder='{"type":"ping"}'></textarea>
+            <label class="block-label">Max messages / timeout ms</label>
+            <div class="req-line" style="grid-template-columns: 1fr 1fr">
+              <input id="ws-max" type="number" value="5" />
+              <input id="ws-timeout" type="number" value="5000" />
+            </div>
+          </div>
+          <div id="sse-pane" class="hidden">
+            <label class="block-label">Max events / timeout ms</label>
+            <div class="req-line" style="grid-template-columns: 1fr 1fr">
+              <input id="sse-max" type="number" value="10" />
+              <input id="sse-timeout" type="number" value="5000" />
+            </div>
+          </div>
+          <label class="block-label">Expected status (CLI)</label>
+          <input id="expect-status" type="number" placeholder="e.g. 200" />
         </section>
 
         <section class="response">

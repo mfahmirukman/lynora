@@ -77,6 +77,9 @@ pub fn import_openapi_json(json: &str, dest_root: &Path) -> Result<Collection> {
                 auth: None,
                 graphql: None,
                 grpc: None,
+                expect_status: None,
+                websocket: None,
+                sse: None,
             };
             col.save_request(&doc)?;
         }

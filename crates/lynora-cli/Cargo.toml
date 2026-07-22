@@ -1,0 +1,22 @@
+[package]
+name = "lynora-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lynora headless collection runner for CI"
+
+[[bin]]
+name = "lynora"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+lynora-core = { path = "../lynora-core" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }

@@ -1,8 +1,9 @@
 use lynora_core::{
-    generate_code, import_openapi_json, import_postman_json, import_proto_source, introspect_graphql,
-    prepare_request, send_graphql, send_grpc, send_rest, AuthConfig, CodeLanguage, Collection,
-    Environment, GraphQlBody, GraphQlRequest, GrpcBody, GrpcRequest, Header, HistoryEntry,
-    NewHistoryEntry, Protocol, RequestDocument, RestRequest, Workspace,
+    connect_websocket, generate_code, import_openapi_json, import_postman_json, import_proto_source,
+    introspect_graphql, listen_sse, prepare_request, send_graphql, send_grpc, send_rest, AuthConfig,
+    CodeLanguage, Collection, Environment, GraphQlBody, GraphQlRequest, GrpcBody, GrpcRequest,
+    Header, HistoryEntry, NewHistoryEntry, Protocol, RealtimeRequest, RequestDocument, RestRequest,
+    SseBody, WebSocketBody, Workspace,
 };
 use lynora_sync::{
     apply_bundle_to_disk, bundle_from_collection, SyncClient,
@@ -61,6 +62,12 @@ struct SaveRequestInput {
     graphql: Option<GraphQlBody>,
     #[serde(default)]
     grpc: Option<GrpcBody>,
+    #[serde(default)]
+    expect_status: Option<u16>,
+    #[serde(default)]
+    websocket: Option<WebSocketBody>,
+    #[serde(default)]
+    sse: Option<SseBody>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +88,12 @@ struct SendRequestInput {
     grpc: Option<GrpcBody>,
     #[serde(default)]
     collection_path: Option<String>,
+    #[serde(default)]
+    expect_status: Option<u16>,
+    #[serde(default)]
+    websocket: Option<WebSocketBody>,
+    #[serde(default)]
+    sse: Option<SseBody>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,6 +113,10 @@ struct GenerateCodeInput {
     graphql: Option<GraphQlBody>,
     #[serde(default)]
     grpc: Option<GrpcBody>,
+    #[serde(default)]
+    websocket: Option<WebSocketBody>,
+    #[serde(default)]
+    sse: Option<SseBody>,
 }
 
 #[tauri::command]
@@ -170,6 +187,9 @@ fn save_request(input: SaveRequestInput) -> Result<RequestDocument, String> {
         auth: input.auth,
         graphql: input.graphql,
         grpc: input.grpc,
+        expect_status: input.expect_status,
+        websocket: input.websocket,
+        sse: input.sse,
     };
     col.save_request(&doc).map_err(state_err)?;
     Ok(doc)
@@ -208,6 +228,9 @@ fn doc_from_send(input: &SendRequestInput) -> RequestDocument {
         auth: input.auth.clone(),
         graphql: input.graphql.clone(),
         grpc: input.grpc.clone(),
+        expect_status: input.expect_status,
+        websocket: input.websocket.clone(),
+        sse: input.sse.clone(),
     }
 }
 
@@ -249,6 +272,34 @@ async fn dispatch_send(
                 collection_root: collection_path.map(PathBuf::from),
                 headers: prepared.headers,
             })
+            .await
+            .map_err(state_err)
+        }
+        Protocol::Websocket => {
+            let prepared = prepare_request(doc, vars).map_err(state_err)?;
+            let ws = doc.websocket.clone().unwrap_or_default();
+            connect_websocket(
+                RealtimeRequest {
+                    url: prepared.url,
+                    headers: prepared.headers,
+                },
+                &ws,
+                vars,
+            )
+            .await
+            .map_err(state_err)
+        }
+        Protocol::Sse => {
+            let prepared = prepare_request(doc, vars).map_err(state_err)?;
+            let sse = doc.sse.clone().unwrap_or_default();
+            listen_sse(
+                RealtimeRequest {
+                    url: prepared.url,
+                    headers: prepared.headers,
+                },
+                &sse,
+                vars,
+            )
             .await
             .map_err(state_err)
         }
@@ -305,6 +356,9 @@ async fn generate_snippet(
         auth: input.auth,
         graphql: input.graphql.clone(),
         grpc: input.grpc.clone(),
+        expect_status: None,
+        websocket: input.websocket.clone(),
+        sse: input.sse.clone(),
     };
 
     let prepared = match doc.protocol {
@@ -339,6 +393,7 @@ async fn generate_snippet(
                 body: Some(grpc.message_json),
             }
         }
+        Protocol::Websocket | Protocol::Sse => prepare_request(&doc, &vars).map_err(state_err)?,
         Protocol::Rest => prepare_request(&doc, &vars).map_err(state_err)?,
     };
 
@@ -368,6 +423,9 @@ async fn introspect(
         auth,
         graphql: None,
         grpc: None,
+        expect_status: None,
+        websocket: None,
+        sse: None,
     };
     let prepared = prepare_request(&doc, &vars).map_err(state_err)?;
     introspect_graphql(&prepared.url, prepared.headers)

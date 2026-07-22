@@ -318,6 +318,9 @@ mod tests {
             auth: None,
             graphql: None,
             grpc: None,
+            expect_status: None,
+            websocket: None,
+            sse: None,
         };
         let h1 = hash_bundle_content(&meta, &[req.clone()]);
         let h2 = hash_bundle_content(&meta, &[req]);

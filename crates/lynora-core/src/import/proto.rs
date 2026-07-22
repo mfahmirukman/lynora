@@ -62,6 +62,9 @@ pub fn import_proto_source(
                     streaming: method.is_client_streaming() || method.is_server_streaming(),
                     input_type: input.full_name().to_string(),
                 }),
+                expect_status: None,
+                websocket: None,
+                sse: None,
             };
             col.save_request(&doc)?;
         }

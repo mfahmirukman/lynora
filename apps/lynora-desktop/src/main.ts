@@ -1,7 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 
 type Header = { key: string; value: string; enabled: boolean };
-type Protocol = "rest" | "graphql" | "grpc";
+type Protocol = "rest" | "graphql" | "grpc" | "websocket" | "sse";
+
+type WebSocketBody = {
+  message?: string | null;
+  maxMessages?: number;
+  timeoutMs?: number;
+};
+
+type SseBody = {
+  maxEvents?: number;
+  timeoutMs?: number;
+};
 
 type GrpcBody = {
   service: string;
@@ -11,6 +22,7 @@ type GrpcBody = {
   streaming?: boolean;
   inputType?: string;
 };
+
 type AuthKind = "none" | "bearer" | "basic" | "apiKey" | "oauth2Pkce" | "awsSigV4";
 
 type AuthConfig = {
@@ -46,6 +58,9 @@ type RequestDocument = {
   auth?: AuthConfig | null;
   graphql?: GraphQlBody | null;
   grpc?: GrpcBody | null;
+  expectStatus?: number | null;
+  websocket?: WebSocketBody | null;
+  sse?: SseBody | null;
 };
 
 type CollectionDto = {
@@ -91,6 +106,14 @@ const els = {
   grpcService: document.querySelector("#grpc-service") as HTMLInputElement,
   grpcMethod: document.querySelector("#grpc-method") as HTMLInputElement,
   grpcMessage: document.querySelector("#grpc-message") as HTMLTextAreaElement,
+  wsPane: document.querySelector("#ws-pane") as HTMLDivElement,
+  wsMessage: document.querySelector("#ws-message") as HTMLTextAreaElement,
+  wsMax: document.querySelector("#ws-max") as HTMLInputElement,
+  wsTimeout: document.querySelector("#ws-timeout") as HTMLInputElement,
+  ssePane: document.querySelector("#sse-pane") as HTMLDivElement,
+  sseMax: document.querySelector("#sse-max") as HTMLInputElement,
+  sseTimeout: document.querySelector("#sse-timeout") as HTMLInputElement,
+  expectStatus: document.querySelector("#expect-status") as HTMLInputElement,
   btnIntrospect: document.querySelector("#btn-introspect") as HTMLButtonElement,
   status: document.querySelector("#status") as HTMLSpanElement,
   duration: document.querySelector("#duration") as HTMLSpanElement,
@@ -108,8 +131,11 @@ function syncProtocolUi() {
   const mode = els.protocol.value as Protocol;
   els.gqlPane.classList.toggle("hidden", mode !== "graphql");
   els.grpcPane.classList.toggle("hidden", mode !== "grpc");
+  els.wsPane.classList.toggle("hidden", mode !== "websocket");
+  els.ssePane.classList.toggle("hidden", mode !== "sse");
   els.restPane.classList.toggle("hidden", mode !== "rest");
   els.btnIntrospect.classList.toggle("hidden", mode !== "graphql");
+  if (mode !== "rest") els.method.value = "GET";
   if (mode === "graphql" || mode === "grpc") els.method.value = "POST";
 }
 
@@ -221,7 +247,15 @@ function renderRequests() {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     const proto =
-      req.protocol === "graphql" ? "GQL" : req.protocol === "grpc" ? "gRPC" : req.method;
+      req.protocol === "graphql"
+        ? "GQL"
+        : req.protocol === "grpc"
+          ? "gRPC"
+          : req.protocol === "websocket"
+            ? "WS"
+            : req.protocol === "sse"
+              ? "SSE"
+              : req.method;
     btn.textContent = `${proto} ${req.name}`;
     btn.className = activeRequestId === req.id ? "active" : "";
     btn.onclick = () => loadRequestIntoEditor(req);
@@ -247,6 +281,12 @@ function clearEditor() {
   els.grpcService.value = "";
   els.grpcMethod.value = "";
   els.grpcMessage.value = '{"name":"world"}';
+  els.wsMessage.value = "";
+  els.wsMax.value = "5";
+  els.wsTimeout.value = "5000";
+  els.sseMax.value = "10";
+  els.sseTimeout.value = "5000";
+  els.expectStatus.value = "";
   writeAuth(null);
   els.status.textContent = "—";
   els.duration.textContent = "";
@@ -257,8 +297,7 @@ function clearEditor() {
 function loadRequestIntoEditor(req: RequestDocument) {
   activeRequestId = req.id;
   els.name.value = req.name;
-  els.protocol.value =
-    req.protocol === "graphql" ? "graphql" : req.protocol === "grpc" ? "grpc" : "rest";
+  els.protocol.value = (req.protocol as Protocol) || "rest";
   els.method.value = req.method;
   els.url.value = req.url;
   els.headers.value = JSON.stringify(req.headers, null, 2);
@@ -268,6 +307,12 @@ function loadRequestIntoEditor(req: RequestDocument) {
   els.grpcService.value = req.grpc?.service ?? "";
   els.grpcMethod.value = req.grpc?.method ?? "";
   els.grpcMessage.value = req.grpc?.messageJson ?? req.body ?? "{}";
+  els.wsMessage.value = req.websocket?.message ?? "";
+  els.wsMax.value = String(req.websocket?.maxMessages ?? 5);
+  els.wsTimeout.value = String(req.websocket?.timeoutMs ?? 5000);
+  els.sseMax.value = String(req.sse?.maxEvents ?? 10);
+  els.sseTimeout.value = String(req.sse?.timeoutMs ?? 5000);
+  els.expectStatus.value = req.expectStatus != null ? String(req.expectStatus) : "";
   writeAuth(req.auth);
   syncProtocolUi();
   renderRequests();
@@ -300,10 +345,27 @@ function currentGrpc(): GrpcBody | null {
   };
 }
 
+function currentWebsocket(): WebSocketBody | null {
+  if (els.protocol.value !== "websocket") return null;
+  return {
+    message: els.wsMessage.value || null,
+    maxMessages: Number(els.wsMax.value || 5),
+    timeoutMs: Number(els.wsTimeout.value || 5000),
+  };
+}
+
+function currentSse(): SseBody | null {
+  if (els.protocol.value !== "sse") return null;
+  return {
+    maxEvents: Number(els.sseMax.value || 10),
+    timeoutMs: Number(els.sseTimeout.value || 5000),
+  };
+}
+
 function requestPayload() {
   const protocol = els.protocol.value as Protocol;
   return {
-    method: protocol === "rest" ? els.method.value : "POST",
+    method: protocol === "rest" ? els.method.value : protocol === "websocket" || protocol === "sse" ? "GET" : "POST",
     url: els.url.value,
     headers: parseHeaders(),
     body:
@@ -311,12 +373,17 @@ function requestPayload() {
         ? els.gqlQuery.value
         : protocol === "grpc"
           ? els.grpcMessage.value
-          : els.body.value || null,
+          : protocol === "websocket"
+            ? els.wsMessage.value
+            : els.body.value || null,
     environmentName: els.envSelect.value || null,
     protocol,
     auth: readAuth(),
     graphql: currentGraphql(),
     grpc: currentGrpc(),
+    websocket: currentWebsocket(),
+    sse: currentSse(),
+    expectStatus: els.expectStatus.value ? Number(els.expectStatus.value) : null,
     collectionPath: activeCollection?.path ?? null,
   };
 }

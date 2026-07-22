@@ -173,6 +173,9 @@ mod tests {
             auth: None,
             graphql: None,
             grpc: None,
+            expect_status: None,
+            websocket: None,
+            sse: None,
         };
         let mut vars = HashMap::new();
         vars.insert("base".into(), "http://example.com".into());
@@ -199,6 +202,9 @@ mod tests {
             }),
             graphql: None,
             grpc: None,
+            expect_status: None,
+            websocket: None,
+            sse: None,
         };
         let mut vars = HashMap::new();
         vars.insert("tok".into(), "secret".into());

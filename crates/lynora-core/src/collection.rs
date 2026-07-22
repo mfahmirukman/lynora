@@ -41,6 +41,12 @@ pub struct RequestDocument {
     pub graphql: Option<crate::graphql::GraphQlBody>,
     #[serde(default)]
     pub grpc: Option<crate::grpc::GrpcBody>,
+    #[serde(default)]
+    pub expect_status: Option<u16>,
+    #[serde(default)]
+    pub websocket: Option<crate::realtime::WebSocketBody>,
+    #[serde(default)]
+    pub sse: Option<crate::realtime::SseBody>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -50,6 +56,8 @@ pub enum Protocol {
     Rest,
     Graphql,
     Grpc,
+    Websocket,
+    Sse,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +173,9 @@ mod tests {
             auth: None,
             graphql: None,
             grpc: None,
+            expect_status: None,
+            websocket: None,
+            sse: None,
         };
         col.save_request(&req).unwrap();
         let loaded = Collection::load(&root).unwrap();

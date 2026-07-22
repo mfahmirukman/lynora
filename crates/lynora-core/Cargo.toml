@@ -27,6 +27,9 @@ prost-types = { workspace = true }
 prost-reflect = { workspace = true }
 protox = { workspace = true }
 bytes = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+tokio-stream = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
