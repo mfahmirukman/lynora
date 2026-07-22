@@ -21,6 +21,12 @@ url = { workspace = true }
 aws-sigv4 = { workspace = true }
 aws-credential-types = { workspace = true }
 http = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+prost-reflect = { workspace = true }
+protox = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -1,7 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 
 type Header = { key: string; value: string; enabled: boolean };
-type Protocol = "rest" | "graphql";
+type Protocol = "rest" | "graphql" | "grpc";
+
+type GrpcBody = {
+  service: string;
+  method: string;
+  messageJson: string;
+  protoFile?: string | null;
+  streaming?: boolean;
+  inputType?: string;
+};
 type AuthKind = "none" | "bearer" | "basic" | "apiKey" | "oauth2Pkce" | "awsSigV4";
 
 type AuthConfig = {
@@ -36,6 +45,7 @@ type RequestDocument = {
   protocol?: Protocol;
   auth?: AuthConfig | null;
   graphql?: GraphQlBody | null;
+  grpc?: GrpcBody | null;
 };
 
 type CollectionDto = {
@@ -77,11 +87,17 @@ const els = {
   exportLang: document.querySelector("#export-lang") as HTMLSelectElement,
   restPane: document.querySelector("#rest-body-pane") as HTMLDivElement,
   gqlPane: document.querySelector("#gql-pane") as HTMLDivElement,
+  grpcPane: document.querySelector("#grpc-pane") as HTMLDivElement,
+  grpcService: document.querySelector("#grpc-service") as HTMLInputElement,
+  grpcMethod: document.querySelector("#grpc-method") as HTMLInputElement,
+  grpcMessage: document.querySelector("#grpc-message") as HTMLTextAreaElement,
   btnIntrospect: document.querySelector("#btn-introspect") as HTMLButtonElement,
   status: document.querySelector("#status") as HTMLSpanElement,
   duration: document.querySelector("#duration") as HTMLSpanElement,
   responseBody: document.querySelector("#response-body") as HTMLPreElement,
   importFile: document.querySelector("#import-file") as HTMLInputElement,
+  importOpenapiFile: document.querySelector("#import-openapi-file") as HTMLInputElement,
+  importProtoFile: document.querySelector("#import-proto-file") as HTMLInputElement,
 };
 
 let collections: CollectionSummary[] = [];
@@ -89,11 +105,12 @@ let activeCollection: CollectionDto | null = null;
 let activeRequestId: string | null = null;
 
 function syncProtocolUi() {
-  const gql = els.protocol.value === "graphql";
-  els.gqlPane.classList.toggle("hidden", !gql);
-  els.restPane.classList.toggle("hidden", gql);
-  els.btnIntrospect.classList.toggle("hidden", !gql);
-  if (gql) els.method.value = "POST";
+  const mode = els.protocol.value as Protocol;
+  els.gqlPane.classList.toggle("hidden", mode !== "graphql");
+  els.grpcPane.classList.toggle("hidden", mode !== "grpc");
+  els.restPane.classList.toggle("hidden", mode !== "rest");
+  els.btnIntrospect.classList.toggle("hidden", mode !== "graphql");
+  if (mode === "graphql" || mode === "grpc") els.method.value = "POST";
 }
 
 function syncAuthUi() {
@@ -203,7 +220,8 @@ function renderRequests() {
   for (const req of activeCollection.requests) {
     const li = document.createElement("li");
     const btn = document.createElement("button");
-    const proto = req.protocol === "graphql" ? "GQL" : req.method;
+    const proto =
+      req.protocol === "graphql" ? "GQL" : req.protocol === "grpc" ? "gRPC" : req.method;
     btn.textContent = `${proto} ${req.name}`;
     btn.className = activeRequestId === req.id ? "active" : "";
     btn.onclick = () => loadRequestIntoEditor(req);
@@ -226,6 +244,9 @@ function clearEditor() {
   els.body.value = "";
   els.gqlQuery.value = "query { __typename }";
   els.gqlVars.value = "{}";
+  els.grpcService.value = "";
+  els.grpcMethod.value = "";
+  els.grpcMessage.value = '{"name":"world"}';
   writeAuth(null);
   els.status.textContent = "—";
   els.duration.textContent = "";
@@ -236,13 +257,17 @@ function clearEditor() {
 function loadRequestIntoEditor(req: RequestDocument) {
   activeRequestId = req.id;
   els.name.value = req.name;
-  els.protocol.value = req.protocol === "graphql" ? "graphql" : "rest";
+  els.protocol.value =
+    req.protocol === "graphql" ? "graphql" : req.protocol === "grpc" ? "grpc" : "rest";
   els.method.value = req.method;
   els.url.value = req.url;
   els.headers.value = JSON.stringify(req.headers, null, 2);
   els.body.value = req.body ?? "";
   els.gqlQuery.value = req.graphql?.query ?? req.body ?? "query { __typename }";
   els.gqlVars.value = req.graphql?.variables ?? "{}";
+  els.grpcService.value = req.grpc?.service ?? "";
+  els.grpcMethod.value = req.grpc?.method ?? "";
+  els.grpcMessage.value = req.grpc?.messageJson ?? req.body ?? "{}";
   writeAuth(req.auth);
   syncProtocolUi();
   renderRequests();
@@ -263,17 +288,36 @@ function currentGraphql(): GraphQlBody | null {
   };
 }
 
+function currentGrpc(): GrpcBody | null {
+  if (els.protocol.value !== "grpc") return null;
+  return {
+    service: els.grpcService.value,
+    method: els.grpcMethod.value,
+    messageJson: els.grpcMessage.value || "{}",
+    protoFile: "source.proto",
+    streaming: false,
+    inputType: "",
+  };
+}
+
 function requestPayload() {
   const protocol = els.protocol.value as Protocol;
   return {
-    method: protocol === "graphql" ? "POST" : els.method.value,
+    method: protocol === "rest" ? els.method.value : "POST",
     url: els.url.value,
     headers: parseHeaders(),
-    body: protocol === "graphql" ? els.gqlQuery.value : els.body.value || null,
+    body:
+      protocol === "graphql"
+        ? els.gqlQuery.value
+        : protocol === "grpc"
+          ? els.grpcMessage.value
+          : els.body.value || null,
     environmentName: els.envSelect.value || null,
     protocol,
     auth: readAuth(),
     graphql: currentGraphql(),
+    grpc: currentGrpc(),
+    collectionPath: activeCollection?.path ?? null,
   };
 }
 
@@ -319,10 +363,10 @@ document.querySelector("#btn-save")!.addEventListener("click", async () => {
     const base = requestPayload();
     const saved = await invoke<RequestDocument>("save_request", {
       input: {
-        collectionPath: activeCollection.path,
         id: activeRequestId,
         name: els.name.value || "Untitled",
         ...base,
+        collectionPath: activeCollection.path,
       },
     });
     activeRequestId = saved.id;
@@ -386,6 +430,12 @@ els.btnIntrospect.addEventListener("click", async () => {
 document.querySelector("#btn-import")!.addEventListener("click", () => {
   els.importFile.click();
 });
+document.querySelector("#btn-import-openapi")!.addEventListener("click", () => {
+  els.importOpenapiFile.click();
+});
+document.querySelector("#btn-import-proto")!.addEventListener("click", () => {
+  els.importProtoFile.click();
+});
 
 els.importFile.addEventListener("change", async () => {
   const file = els.importFile.files?.[0];
@@ -399,6 +449,39 @@ els.importFile.addEventListener("change", async () => {
     alert(String(e));
   } finally {
     els.importFile.value = "";
+  }
+});
+
+els.importOpenapiFile.addEventListener("change", async () => {
+  const file = els.importOpenapiFile.files?.[0];
+  if (!file) return;
+  const json = await file.text();
+  try {
+    const created = await invoke<CollectionSummary>("import_openapi", { json });
+    await refreshCollections();
+    await openCollection(created.path);
+  } catch (e) {
+    alert(String(e));
+  } finally {
+    els.importOpenapiFile.value = "";
+  }
+});
+
+els.importProtoFile.addEventListener("change", async () => {
+  const file = els.importProtoFile.files?.[0];
+  if (!file) return;
+  const contents = await file.text();
+  try {
+    const created = await invoke<CollectionSummary>("import_proto", {
+      contents,
+      endpoint: "http://127.0.0.1:50051",
+    });
+    await refreshCollections();
+    await openCollection(created.path);
+  } catch (e) {
+    alert(String(e));
+  } finally {
+    els.importProtoFile.value = "";
   }
 });
 

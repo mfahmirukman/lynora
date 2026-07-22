@@ -17,7 +17,11 @@
           </select>
           <button type="button" id="btn-new-collection">New collection</button>
           <button type="button" id="btn-import">Import Postman</button>
+          <button type="button" id="btn-import-openapi">Import OpenAPI</button>
+          <button type="button" id="btn-import-proto">Import .proto</button>
           <input id="import-file" type="file" accept="application/json,.json" hidden />
+          <input id="import-openapi-file" type="file" accept="application/json,.json" hidden />
+          <input id="import-proto-file" type="file" accept=".proto" hidden />
         </div>
       </header>
 
@@ -35,6 +39,7 @@
             <select id="protocol">
               <option value="rest">REST</option>
               <option value="graphql">GraphQL</option>
+              <option value="grpc">gRPC</option>
             </select>
             <select id="method">
               <option>GET</option>
@@ -90,6 +95,14 @@
             <textarea id="gql-query" rows="8" placeholder="query { __typename }"></textarea>
             <label class="block-label">Variables (JSON)</label>
             <textarea id="gql-vars" rows="4" placeholder="{}"></textarea>
+          </div>
+          <div id="grpc-pane" class="hidden">
+            <label class="block-label">Service</label>
+            <input id="grpc-service" type="text" placeholder="helloworld.Greeter" />
+            <label class="block-label">Method</label>
+            <input id="grpc-method" type="text" placeholder="SayHello" />
+            <label class="block-label">Message JSON</label>
+            <textarea id="grpc-message" rows="8" placeholder='{"name":"Ada"}'></textarea>
           </div>
         </section>
 

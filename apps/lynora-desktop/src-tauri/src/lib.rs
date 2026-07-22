@@ -1,7 +1,8 @@
 use lynora_core::{
-    generate_code, import_postman_json, introspect_graphql, prepare_request, send_graphql,
-    send_rest, AuthConfig, CodeLanguage, Collection, Environment, GraphQlBody, GraphQlRequest,
-    Header, HistoryEntry, NewHistoryEntry, Protocol, RequestDocument, RestRequest, Workspace,
+    generate_code, import_openapi_json, import_postman_json, import_proto_source, introspect_graphql,
+    prepare_request, send_graphql, send_grpc, send_rest, AuthConfig, CodeLanguage, Collection,
+    Environment, GraphQlBody, GraphQlRequest, GrpcBody, GrpcRequest, Header, HistoryEntry,
+    NewHistoryEntry, Protocol, RequestDocument, RestRequest, Workspace,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -54,6 +55,8 @@ struct SaveRequestInput {
     auth: Option<AuthConfig>,
     #[serde(default)]
     graphql: Option<GraphQlBody>,
+    #[serde(default)]
+    grpc: Option<GrpcBody>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +73,10 @@ struct SendRequestInput {
     auth: Option<AuthConfig>,
     #[serde(default)]
     graphql: Option<GraphQlBody>,
+    #[serde(default)]
+    grpc: Option<GrpcBody>,
+    #[serde(default)]
+    collection_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,6 +94,8 @@ struct GenerateCodeInput {
     protocol: Protocol,
     #[serde(default)]
     graphql: Option<GraphQlBody>,
+    #[serde(default)]
+    grpc: Option<GrpcBody>,
 }
 
 #[tauri::command]
@@ -156,6 +165,7 @@ fn save_request(input: SaveRequestInput) -> Result<RequestDocument, String> {
         protocol: input.protocol,
         auth: input.auth,
         graphql: input.graphql,
+        grpc: input.grpc,
     };
     col.save_request(&doc).map_err(state_err)?;
     Ok(doc)
@@ -193,22 +203,23 @@ fn doc_from_send(input: &SendRequestInput) -> RequestDocument {
         protocol: input.protocol.clone(),
         auth: input.auth.clone(),
         graphql: input.graphql.clone(),
+        grpc: input.grpc.clone(),
     }
 }
 
 async fn dispatch_send(
     doc: &RequestDocument,
     vars: &HashMap<String, String>,
+    collection_path: Option<&str>,
 ) -> Result<lynora_core::RestResponse, String> {
     match doc.protocol {
         Protocol::Graphql => {
             let prepared = prepare_request(doc, vars).map_err(state_err)?;
-            let gql = doc.graphql.clone().unwrap_or(GraphQlBody {
+            let mut gql = doc.graphql.clone().unwrap_or(GraphQlBody {
                 query: doc.body.clone().unwrap_or_default(),
                 variables: None,
                 operation_name: None,
             });
-            let mut gql = gql;
             if let Some(vars_json) = gql.variables.as_ref() {
                 gql.variables = Some(lynora_core::expand(vars_json, vars).map_err(state_err)?);
             }
@@ -217,6 +228,22 @@ async fn dispatch_send(
                 url: prepared.url,
                 headers: prepared.headers,
                 body: gql,
+            })
+            .await
+            .map_err(state_err)
+        }
+        Protocol::Grpc => {
+            let prepared = prepare_request(doc, vars).map_err(state_err)?;
+            let mut grpc_body = doc.grpc.clone().ok_or_else(|| {
+                "gRPC request missing service/method metadata".to_string()
+            })?;
+            grpc_body.message_json =
+                lynora_core::expand(&grpc_body.message_json, vars).map_err(state_err)?;
+            send_grpc(GrpcRequest {
+                endpoint: prepared.url,
+                body: grpc_body,
+                collection_root: collection_path.map(PathBuf::from),
+                headers: prepared.headers,
             })
             .await
             .map_err(state_err)
@@ -238,7 +265,7 @@ async fn send_request(
         load_env_vars(&state, &input.environment_name)?
     };
     let doc = doc_from_send(&input);
-    let response = dispatch_send(&doc, &vars).await?;
+    let response = dispatch_send(&doc, &vars, input.collection_path.as_deref()).await?;
 
     {
         let state = state.lock().map_err(|e| e.to_string())?;
@@ -273,6 +300,7 @@ async fn generate_snippet(
         protocol: input.protocol,
         auth: input.auth,
         graphql: input.graphql.clone(),
+        grpc: input.grpc.clone(),
     };
 
     let prepared = match doc.protocol {
@@ -295,6 +323,16 @@ async fn generate_snippet(
                     h
                 },
                 body: Some(payload),
+            }
+        }
+        Protocol::Grpc => {
+            let base = prepare_request(&doc, &vars).map_err(state_err)?;
+            let grpc = doc.grpc.unwrap_or_default();
+            RestRequest {
+                method: "POST".into(),
+                url: format!("{}/{}", base.url.trim_end_matches('/'), grpc.method),
+                headers: base.headers,
+                body: Some(grpc.message_json),
             }
         }
         Protocol::Rest => prepare_request(&doc, &vars).map_err(state_err)?,
@@ -325,6 +363,7 @@ async fn introspect(
         protocol: Protocol::Graphql,
         auth,
         graphql: None,
+        grpc: None,
     };
     let prepared = prepare_request(&doc, &vars).map_err(state_err)?;
     introspect_graphql(&prepared.url, prepared.headers)
@@ -332,13 +371,7 @@ async fn introspect(
         .map_err(state_err)
 }
 
-#[tauri::command]
-fn import_postman(
-    state: tauri::State<'_, Mutex<AppState>>,
-    json: String,
-) -> Result<CollectionSummary, String> {
-    let state = state.lock().map_err(|e| e.to_string())?;
-    let slug_base = "imported";
+fn next_import_root(state: &AppState, slug_base: &str) -> PathBuf {
     let mut root = state.workspace.collections_dir.join(slug_base);
     let mut n = 2;
     while root.exists() {
@@ -348,7 +381,49 @@ fn import_postman(
             .join(format!("{slug_base}-{n}"));
         n += 1;
     }
+    root
+}
+
+#[tauri::command]
+fn import_postman(
+    state: tauri::State<'_, Mutex<AppState>>,
+    json: String,
+) -> Result<CollectionSummary, String> {
+    let state = state.lock().map_err(|e| e.to_string())?;
+    let root = next_import_root(&state, "imported");
     let col = import_postman_json(&json, &root).map_err(state_err)?;
+    Ok(CollectionSummary {
+        path: col.root.display().to_string(),
+        id: col.meta.id,
+        name: col.meta.name,
+    })
+}
+
+#[tauri::command]
+fn import_openapi(
+    state: tauri::State<'_, Mutex<AppState>>,
+    json: String,
+) -> Result<CollectionSummary, String> {
+    let state = state.lock().map_err(|e| e.to_string())?;
+    let root = next_import_root(&state, "openapi");
+    let col = import_openapi_json(&json, &root).map_err(state_err)?;
+    Ok(CollectionSummary {
+        path: col.root.display().to_string(),
+        id: col.meta.id,
+        name: col.meta.name,
+    })
+}
+
+#[tauri::command]
+fn import_proto(
+    state: tauri::State<'_, Mutex<AppState>>,
+    contents: String,
+    endpoint: Option<String>,
+) -> Result<CollectionSummary, String> {
+    let state = state.lock().map_err(|e| e.to_string())?;
+    let root = next_import_root(&state, "proto");
+    let endpoint = endpoint.unwrap_or_else(|| "http://127.0.0.1:50051".into());
+    let col = import_proto_source(&contents, &root, &endpoint).map_err(state_err)?;
     Ok(CollectionSummary {
         path: col.root.display().to_string(),
         id: col.meta.id,
@@ -383,6 +458,8 @@ pub fn run() {
             generate_snippet,
             introspect,
             import_postman,
+            import_openapi,
+            import_proto,
             list_history,
         ])
         .run(tauri::generate_context!())

@@ -172,6 +172,7 @@ mod tests {
             protocol: Protocol::Rest,
             auth: None,
             graphql: None,
+            grpc: None,
         };
         let mut vars = HashMap::new();
         vars.insert("base".into(), "http://example.com".into());
@@ -197,6 +198,7 @@ mod tests {
                 ..Default::default()
             }),
             graphql: None,
+            grpc: None,
         };
         let mut vars = HashMap::new();
         vars.insert("tok".into(), "secret".into());

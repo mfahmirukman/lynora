@@ -39,6 +39,8 @@ pub struct RequestDocument {
     pub auth: Option<crate::auth::AuthConfig>,
     #[serde(default)]
     pub graphql: Option<crate::graphql::GraphQlBody>,
+    #[serde(default)]
+    pub grpc: Option<crate::grpc::GrpcBody>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -47,6 +49,7 @@ pub enum Protocol {
     #[default]
     Rest,
     Graphql,
+    Grpc,
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +164,7 @@ mod tests {
             protocol: Protocol::Rest,
             auth: None,
             graphql: None,
+            grpc: None,
         };
         col.save_request(&req).unwrap();
         let loaded = Collection::load(&root).unwrap();

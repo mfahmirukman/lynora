@@ -106,6 +106,7 @@ pub fn import_postman_json(json: &str, dest_root: &Path) -> Result<Collection> {
             protocol: crate::collection::Protocol::Rest,
             auth: None,
             graphql: None,
+            grpc: None,
         };
         col.save_request(&doc)?;
     }
