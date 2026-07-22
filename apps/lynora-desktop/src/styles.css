@@ -110,9 +110,28 @@ li button.active {
   gap: 0.5rem;
 }
 
+.toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.toolbar-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.hidden {
+  display: none !important;
+}
+
 .req-line {
   display: grid;
-  grid-template-columns: 110px 1fr auto auto;
+  grid-template-columns: 100px 110px 1fr auto auto;
   gap: 0.4rem;
 }
 

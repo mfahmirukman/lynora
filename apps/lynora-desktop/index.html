@@ -32,6 +32,10 @@
 
         <section class="editor">
           <div class="req-line">
+            <select id="protocol">
+              <option value="rest">REST</option>
+              <option value="graphql">GraphQL</option>
+            </select>
             <select id="method">
               <option>GET</option>
               <option>POST</option>
@@ -46,10 +50,47 @@
             <button type="button" id="btn-save">Save</button>
           </div>
           <input id="req-name" type="text" placeholder="Request name" />
+
+          <div class="toolbar-row">
+            <label>
+              Auth
+              <select id="auth-kind">
+                <option value="none">None</option>
+                <option value="bearer">Bearer</option>
+                <option value="basic">Basic</option>
+                <option value="apiKey">API Key</option>
+                <option value="oauth2Pkce">OAuth2 PKCE</option>
+                <option value="awsSigV4">AWS SigV4</option>
+              </select>
+            </label>
+            <label>
+              Export
+              <select id="export-lang">
+                <option value="curl">curl</option>
+                <option value="fetch">fetch</option>
+                <option value="reqwest">reqwest</option>
+              </select>
+            </label>
+            <button type="button" id="btn-export">Copy snippet</button>
+            <button type="button" id="btn-introspect" class="hidden">Introspect</button>
+          </div>
+          <input id="auth-token" type="text" placeholder="Token / API key / password" />
+          <input id="auth-username" type="text" placeholder="Username / access key / client id" class="hidden" />
+          <input id="auth-extra" type="text" placeholder="API key name / region / secret" class="hidden" />
+
           <label class="block-label">Headers (JSON array of {key,value,enabled})</label>
-          <textarea id="headers" rows="4">[{"key":"Accept","value":"application/json","enabled":true}]</textarea>
-          <label class="block-label">Body</label>
-          <textarea id="body" rows="8" placeholder="{}"></textarea>
+          <textarea id="headers" rows="3">[{"key":"Accept","value":"application/json","enabled":true}]</textarea>
+
+          <div id="rest-body-pane">
+            <label class="block-label">Body</label>
+            <textarea id="body" rows="8" placeholder="{}"></textarea>
+          </div>
+          <div id="gql-pane" class="hidden">
+            <label class="block-label">GraphQL query</label>
+            <textarea id="gql-query" rows="8" placeholder="query { __typename }"></textarea>
+            <label class="block-label">Variables (JSON)</label>
+            <textarea id="gql-vars" rows="4" placeholder="{}"></textarea>
+          </div>
         </section>
 
         <section class="response">

@@ -1,6 +1,7 @@
 use lynora_core::{
-    import_postman_json, prepare_request, send_rest, Collection, Environment, Header,
-    HistoryEntry, NewHistoryEntry, RequestDocument, Workspace,
+    generate_code, import_postman_json, introspect_graphql, prepare_request, send_graphql,
+    send_rest, AuthConfig, CodeLanguage, Collection, Environment, GraphQlBody, GraphQlRequest,
+    Header, HistoryEntry, NewHistoryEntry, Protocol, RequestDocument, RestRequest, Workspace,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,6 +15,20 @@ struct AppState {
 
 fn state_err(e: impl ToString) -> String {
     e.to_string()
+}
+
+fn load_env_vars(
+    state: &AppState,
+    environment_name: &Option<String>,
+) -> Result<HashMap<String, String>, String> {
+    let mut vars = HashMap::new();
+    if let Some(name) = environment_name {
+        let envs = state.workspace.list_environments().map_err(state_err)?;
+        if let Some(env) = envs.into_iter().find(|e| e.name == *name) {
+            vars = env.values;
+        }
+    }
+    Ok(vars)
 }
 
 #[derive(Debug, Serialize)]
@@ -33,6 +48,12 @@ struct SaveRequestInput {
     url: String,
     headers: Vec<Header>,
     body: Option<String>,
+    #[serde(default)]
+    protocol: Protocol,
+    #[serde(default)]
+    auth: Option<AuthConfig>,
+    #[serde(default)]
+    graphql: Option<GraphQlBody>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,6 +64,29 @@ struct SendRequestInput {
     headers: Vec<Header>,
     body: Option<String>,
     environment_name: Option<String>,
+    #[serde(default)]
+    protocol: Protocol,
+    #[serde(default)]
+    auth: Option<AuthConfig>,
+    #[serde(default)]
+    graphql: Option<GraphQlBody>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateCodeInput {
+    language: CodeLanguage,
+    method: String,
+    url: String,
+    headers: Vec<Header>,
+    body: Option<String>,
+    environment_name: Option<String>,
+    #[serde(default)]
+    auth: Option<AuthConfig>,
+    #[serde(default)]
+    protocol: Protocol,
+    #[serde(default)]
+    graphql: Option<GraphQlBody>,
 }
 
 #[tauri::command]
@@ -109,6 +153,9 @@ fn save_request(input: SaveRequestInput) -> Result<RequestDocument, String> {
         url: input.url,
         headers: input.headers,
         body: input.body,
+        protocol: input.protocol,
+        auth: input.auth,
+        graphql: input.graphql,
     };
     col.save_request(&doc).map_err(state_err)?;
     Ok(doc)
@@ -135,6 +182,52 @@ fn save_environment(
     env.save(&path).map_err(state_err)
 }
 
+fn doc_from_send(input: &SendRequestInput) -> RequestDocument {
+    RequestDocument {
+        id: String::new(),
+        name: String::new(),
+        method: input.method.clone(),
+        url: input.url.clone(),
+        headers: input.headers.clone(),
+        body: input.body.clone(),
+        protocol: input.protocol.clone(),
+        auth: input.auth.clone(),
+        graphql: input.graphql.clone(),
+    }
+}
+
+async fn dispatch_send(
+    doc: &RequestDocument,
+    vars: &HashMap<String, String>,
+) -> Result<lynora_core::RestResponse, String> {
+    match doc.protocol {
+        Protocol::Graphql => {
+            let prepared = prepare_request(doc, vars).map_err(state_err)?;
+            let gql = doc.graphql.clone().unwrap_or(GraphQlBody {
+                query: doc.body.clone().unwrap_or_default(),
+                variables: None,
+                operation_name: None,
+            });
+            let mut gql = gql;
+            if let Some(vars_json) = gql.variables.as_ref() {
+                gql.variables = Some(lynora_core::expand(vars_json, vars).map_err(state_err)?);
+            }
+            gql.query = lynora_core::expand(&gql.query, vars).map_err(state_err)?;
+            send_graphql(GraphQlRequest {
+                url: prepared.url,
+                headers: prepared.headers,
+                body: gql,
+            })
+            .await
+            .map_err(state_err)
+        }
+        Protocol::Rest => {
+            let prepared = prepare_request(doc, vars).map_err(state_err)?;
+            send_rest(prepared).await.map_err(state_err)
+        }
+    }
+}
+
 #[tauri::command]
 async fn send_request(
     state: tauri::State<'_, Mutex<AppState>>,
@@ -142,26 +235,10 @@ async fn send_request(
 ) -> Result<lynora_core::RestResponse, String> {
     let vars = {
         let state = state.lock().map_err(|e| e.to_string())?;
-        let mut vars = HashMap::new();
-        if let Some(name) = &input.environment_name {
-            let envs = state.workspace.list_environments().map_err(state_err)?;
-            if let Some(env) = envs.into_iter().find(|e| e.name == *name) {
-                vars = env.values;
-            }
-        }
-        vars
+        load_env_vars(&state, &input.environment_name)?
     };
-
-    let doc = RequestDocument {
-        id: String::new(),
-        name: String::new(),
-        method: input.method.clone(),
-        url: input.url.clone(),
-        headers: input.headers,
-        body: input.body.clone(),
-    };
-    let prepared = prepare_request(&doc, &vars).map_err(state_err)?;
-    let response = send_rest(prepared).await.map_err(state_err)?;
+    let doc = doc_from_send(&input);
+    let response = dispatch_send(&doc, &vars).await?;
 
     {
         let state = state.lock().map_err(|e| e.to_string())?;
@@ -175,6 +252,84 @@ async fn send_request(
     }
 
     Ok(response)
+}
+
+#[tauri::command]
+async fn generate_snippet(
+    state: tauri::State<'_, Mutex<AppState>>,
+    input: GenerateCodeInput,
+) -> Result<String, String> {
+    let vars = {
+        let state = state.lock().map_err(|e| e.to_string())?;
+        load_env_vars(&state, &input.environment_name)?
+    };
+    let doc = RequestDocument {
+        id: String::new(),
+        name: String::new(),
+        method: input.method,
+        url: input.url,
+        headers: input.headers,
+        body: input.body,
+        protocol: input.protocol,
+        auth: input.auth,
+        graphql: input.graphql.clone(),
+    };
+
+    let prepared = match doc.protocol {
+        Protocol::Graphql => {
+            let base = prepare_request(&doc, &vars).map_err(state_err)?;
+            let gql = doc.graphql.unwrap_or(GraphQlBody {
+                query: base.body.clone().unwrap_or_default(),
+                variables: None,
+                operation_name: None,
+            });
+            let payload = lynora_core::graphql::build_payload(&gql).map_err(state_err)?;
+            RestRequest {
+                method: "POST".into(),
+                url: base.url,
+                headers: {
+                    let mut h = base.headers;
+                    if !h.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type")) {
+                        h.push(("Content-Type".into(), "application/json".into()));
+                    }
+                    h
+                },
+                body: Some(payload),
+            }
+        }
+        Protocol::Rest => prepare_request(&doc, &vars).map_err(state_err)?,
+    };
+
+    Ok(generate_code(input.language, &prepared))
+}
+
+#[tauri::command]
+async fn introspect(
+    state: tauri::State<'_, Mutex<AppState>>,
+    url: String,
+    headers: Vec<Header>,
+    environment_name: Option<String>,
+    auth: Option<AuthConfig>,
+) -> Result<lynora_core::RestResponse, String> {
+    let vars = {
+        let state = state.lock().map_err(|e| e.to_string())?;
+        load_env_vars(&state, &environment_name)?
+    };
+    let doc = RequestDocument {
+        id: String::new(),
+        name: String::new(),
+        method: "POST".into(),
+        url,
+        headers,
+        body: None,
+        protocol: Protocol::Graphql,
+        auth,
+        graphql: None,
+    };
+    let prepared = prepare_request(&doc, &vars).map_err(state_err)?;
+    introspect_graphql(&prepared.url, prepared.headers)
+        .await
+        .map_err(state_err)
 }
 
 #[tauri::command]
@@ -225,6 +380,8 @@ pub fn run() {
             list_environments,
             save_environment,
             send_request,
+            generate_snippet,
+            introspect,
             import_postman,
             list_history,
         ])

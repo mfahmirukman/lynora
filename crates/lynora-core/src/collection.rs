@@ -33,6 +33,20 @@ pub struct RequestDocument {
     pub headers: Vec<Header>,
     #[serde(default)]
     pub body: Option<String>,
+    #[serde(default)]
+    pub protocol: Protocol,
+    #[serde(default)]
+    pub auth: Option<crate::auth::AuthConfig>,
+    #[serde(default)]
+    pub graphql: Option<crate::graphql::GraphQlBody>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Protocol {
+    #[default]
+    Rest,
+    Graphql,
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +158,9 @@ mod tests {
                 enabled: true,
             }],
             body: None,
+            protocol: Protocol::Rest,
+            auth: None,
+            graphql: None,
         };
         col.save_request(&req).unwrap();
         let loaded = Collection::load(&root).unwrap();
