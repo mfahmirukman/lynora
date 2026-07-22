@@ -4,6 +4,9 @@ use lynora_core::{
     Environment, GraphQlBody, GraphQlRequest, GrpcBody, GrpcRequest, Header, HistoryEntry,
     NewHistoryEntry, Protocol, RequestDocument, RestRequest, Workspace,
 };
+use lynora_sync::{
+    apply_bundle_to_disk, bundle_from_collection, SyncClient,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -12,6 +15,7 @@ use uuid::Uuid;
 
 struct AppState {
     workspace: Workspace,
+    sync: Option<SyncClient>,
 }
 
 fn state_err(e: impl ToString) -> String {
@@ -441,12 +445,191 @@ fn list_history(
     history.list_recent(limit.unwrap_or(50)).map_err(state_err)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthStatus {
+    signed_in: bool,
+    email: Option<String>,
+    sync_url: Option<String>,
+}
+
+#[tauri::command]
+async fn sync_register(
+    state: tauri::State<'_, Mutex<AppState>>,
+    sync_url: String,
+    email: String,
+    password: String,
+) -> Result<AuthStatus, String> {
+    let mut client = SyncClient::new(sync_url.clone());
+    let auth = client
+        .register(&email, &password)
+        .await
+        .map_err(|e| e.to_string())?;
+    {
+        let mut state = state.lock().map_err(|e| e.to_string())?;
+        state.sync = Some(client);
+        let _ = std::fs::write(
+            state.workspace.config_dir.join("sync.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "syncUrl": sync_url,
+                "token": auth.token,
+                "email": auth.email,
+            }))
+            .unwrap_or_default(),
+        );
+    }
+    Ok(AuthStatus {
+        signed_in: true,
+        email: Some(auth.email),
+        sync_url: Some(sync_url),
+    })
+}
+
+#[tauri::command]
+async fn sync_login(
+    state: tauri::State<'_, Mutex<AppState>>,
+    sync_url: String,
+    email: String,
+    password: String,
+) -> Result<AuthStatus, String> {
+    let mut client = SyncClient::new(sync_url.clone());
+    let auth = client
+        .login(&email, &password)
+        .await
+        .map_err(|e| e.to_string())?;
+    {
+        let mut state = state.lock().map_err(|e| e.to_string())?;
+        state.sync = Some(client);
+        let _ = std::fs::write(
+            state.workspace.config_dir.join("sync.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "syncUrl": sync_url,
+                "token": auth.token,
+                "email": auth.email,
+            }))
+            .unwrap_or_default(),
+        );
+    }
+    Ok(AuthStatus {
+        signed_in: true,
+        email: Some(auth.email),
+        sync_url: Some(sync_url),
+    })
+}
+
+#[tauri::command]
+fn sync_status(state: tauri::State<'_, Mutex<AppState>>) -> Result<AuthStatus, String> {
+    let state = state.lock().map_err(|e| e.to_string())?;
+    let path = state.workspace.config_dir.join("sync.json");
+    if !path.exists() {
+        return Ok(AuthStatus {
+            signed_in: false,
+            email: None,
+            sync_url: None,
+        });
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).map_err(state_err)?)
+            .map_err(state_err)?;
+    Ok(AuthStatus {
+        signed_in: v.get("token").and_then(|t| t.as_str()).is_some(),
+        email: v.get("email").and_then(|e| e.as_str()).map(str::to_string),
+        sync_url: v
+            .get("syncUrl")
+            .and_then(|e| e.as_str())
+            .map(str::to_string),
+    })
+}
+
+#[tauri::command]
+async fn sync_now(
+    state: tauri::State<'_, Mutex<AppState>>,
+    force: Option<bool>,
+) -> Result<String, String> {
+    let force = force.unwrap_or(false);
+    let (client, collections, envs, collections_dir) = {
+        let state = state.lock().map_err(|e| e.to_string())?;
+        let path = state.workspace.config_dir.join("sync.json");
+        let v: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&path).map_err(|_| "not signed in — save sync.json via login".to_string())?,
+        )
+        .map_err(state_err)?;
+        let url = v
+            .get("syncUrl")
+            .and_then(|u| u.as_str())
+            .ok_or_else(|| "missing syncUrl".to_string())?;
+        let token = v
+            .get("token")
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| "missing token".to_string())?;
+        let client = SyncClient::new(url).with_token(token);
+        let collections = state.workspace.list_collections().map_err(state_err)?;
+        let envs = state.workspace.list_environments().map_err(state_err)?;
+        (
+            client,
+            collections,
+            envs,
+            state.workspace.collections_dir.clone(),
+        )
+    };
+
+    let mut pushed = 0usize;
+    for (path, _meta) in &collections {
+        let col = Collection::load(path).map_err(state_err)?;
+        let bundle = bundle_from_collection(&col, &envs).map_err(|e| e.to_string())?;
+        client
+            .push(&bundle, force)
+            .await
+            .map_err(|e| e.to_string())?;
+        pushed += 1;
+    }
+
+    let remote = client.list_remote().await.map_err(|e| e.to_string())?;
+    let mut pulled = 0usize;
+    for item in remote {
+        let local = collections.iter().find(|(_, m)| m.id == item.id);
+        if local.is_some() && !force {
+            continue;
+        }
+        let bundle = client.pull(&item.id).await.map_err(|e| e.to_string())?;
+        let dest = if let Some((path, _)) = local {
+            path.clone()
+        } else {
+            collections_dir.join(item.name.replace(['/', ' '], "-").to_lowercase())
+        };
+        let _backup = apply_bundle_to_disk(&bundle, &dest).map_err(|e| e.to_string())?;
+        pulled += 1;
+    }
+
+    Ok(format!("pushed {pushed}, pulled/merged {pulled}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let workspace = Workspace::open_default().expect("failed to open Lynora workspace");
+    // Restore sync client if present
+    let sync_client = {
+        let path = workspace.config_dir.join("sync.json");
+        if path.exists() {
+            std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| {
+                    let url = v.get("syncUrl")?.as_str()?;
+                    let token = v.get("token")?.as_str()?;
+                    Some(SyncClient::new(url).with_token(token))
+                })
+        } else {
+            None
+        }
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(Mutex::new(AppState { workspace }))
+        .manage(Mutex::new(AppState {
+            workspace,
+            sync: sync_client,
+        }))
         .invoke_handler(tauri::generate_handler![
             list_collections,
             create_collection,
@@ -461,6 +644,10 @@ pub fn run() {
             import_openapi,
             import_proto,
             list_history,
+            sync_register,
+            sync_login,
+            sync_status,
+            sync_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

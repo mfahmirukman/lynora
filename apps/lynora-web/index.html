@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lynora Web</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">Lynora <span class="badge">web</span></div>
+        <div class="top-actions">
+          <input id="sync-url" type="text" placeholder="Sync server URL" value="http://127.0.0.1:8787" />
+          <input id="email" type="email" placeholder="Email" />
+          <input id="password" type="password" placeholder="Password" />
+          <button type="button" id="btn-login">Sign in</button>
+          <button type="button" id="btn-register">Register</button>
+          <button type="button" id="btn-sync">Sync now</button>
+          <span id="auth-status" class="muted">Local only</span>
+        </div>
+      </header>
+      <div class="workspace">
+        <aside class="sidebar">
+          <div class="sidebar-label">Collections</div>
+          <ul id="collection-list"></ul>
+          <button type="button" id="btn-new-collection" class="ghost">+ New collection</button>
+          <div class="sidebar-label">Requests</div>
+          <ul id="request-list"></ul>
+          <button type="button" id="btn-new-request" class="ghost">+ New request</button>
+          <p class="note">Browser supports REST &amp; GraphQL. gRPC stays on desktop.</p>
+        </aside>
+        <section class="editor">
+          <div class="req-line">
+            <select id="protocol">
+              <option value="rest">REST</option>
+              <option value="graphql">GraphQL</option>
+            </select>
+            <select id="method">
+              <option>GET</option>
+              <option>POST</option>
+              <option>PUT</option>
+              <option>PATCH</option>
+              <option>DELETE</option>
+            </select>
+            <input id="url" placeholder="https://api.example.com/{{path}}" />
+            <button type="button" id="btn-send" class="primary">Send</button>
+            <button type="button" id="btn-save">Save</button>
+          </div>
+          <input id="req-name" placeholder="Request name" />
+          <label class="block-label">Headers JSON</label>
+          <textarea id="headers" rows="3">[{"key":"Accept","value":"application/json","enabled":true}]</textarea>
+          <div id="rest-pane">
+            <label class="block-label">Body</label>
+            <textarea id="body" rows="8"></textarea>
+          </div>
+          <div id="gql-pane" class="hidden">
+            <label class="block-label">Query</label>
+            <textarea id="gql-query" rows="8">query { __typename }</textarea>
+            <label class="block-label">Variables</label>
+            <textarea id="gql-vars" rows="4">{}</textarea>
+          </div>
+        </section>
+        <section class="response">
+          <div class="resp-meta"><span id="status">—</span><span id="duration"></span></div>
+          <pre id="response-body" class="response-body">Send a request to see the response.</pre>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

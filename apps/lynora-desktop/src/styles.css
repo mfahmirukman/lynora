@@ -210,6 +210,8 @@ button.ghost {
   word-break: break-word;
 }
 
+.muted { color: var(--muted); font-size: 0.85rem; }
+
 @media (max-width: 960px) {
   .workspace {
     grid-template-columns: 1fr;

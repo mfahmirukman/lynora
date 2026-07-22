@@ -1,0 +1,21 @@
+[package]
+name = "lynora-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Optional account and collection sync client for Lynora"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+lynora-core = { path = "../lynora-core" }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = { workspace = true }

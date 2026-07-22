@@ -485,10 +485,68 @@ els.importProtoFile.addEventListener("change", async () => {
   }
 });
 
+const syncUrl = document.querySelector("#sync-url") as HTMLInputElement;
+const syncEmail = document.querySelector("#sync-email") as HTMLInputElement;
+const syncPassword = document.querySelector("#sync-password") as HTMLInputElement;
+const syncStatus = document.querySelector("#sync-status") as HTMLSpanElement;
+
+async function refreshSyncStatus() {
+  try {
+    const status = await invoke<{
+      signedIn: boolean;
+      email?: string | null;
+      syncUrl?: string | null;
+    }>("sync_status");
+    syncStatus.textContent = status.signedIn
+      ? `Signed in${status.email ? ` (${status.email})` : ""}`
+      : "Local only";
+    if (status.syncUrl) syncUrl.value = status.syncUrl;
+  } catch {
+    syncStatus.textContent = "Local only";
+  }
+}
+
+document.querySelector("#btn-sync-login")!.addEventListener("click", async () => {
+  try {
+    await invoke("sync_login", {
+      syncUrl: syncUrl.value,
+      email: syncEmail.value,
+      password: syncPassword.value,
+    });
+    await refreshSyncStatus();
+  } catch (e) {
+    alert(String(e));
+  }
+});
+
+document.querySelector("#btn-sync-register")!.addEventListener("click", async () => {
+  try {
+    await invoke("sync_register", {
+      syncUrl: syncUrl.value,
+      email: syncEmail.value,
+      password: syncPassword.value,
+    });
+    await refreshSyncStatus();
+  } catch (e) {
+    alert(String(e));
+  }
+});
+
+document.querySelector("#btn-sync-now")!.addEventListener("click", async () => {
+  try {
+    const msg = await invoke<string>("sync_now", { force: true });
+    await refreshCollections();
+    els.responseBody.textContent = msg;
+  } catch (e) {
+    alert(String(e));
+  }
+});
+
 async function boot() {
   await ensureDefaultEnvironment();
   await refreshEnvironments();
   await refreshCollections();
+  await refreshSyncStatus();
   syncProtocolUi();
   syncAuthUi();
   if (collections[0]) {

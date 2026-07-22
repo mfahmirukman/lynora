@@ -19,6 +19,13 @@
           <button type="button" id="btn-import">Import Postman</button>
           <button type="button" id="btn-import-openapi">Import OpenAPI</button>
           <button type="button" id="btn-import-proto">Import .proto</button>
+          <input id="sync-url" type="text" placeholder="Sync URL" value="http://127.0.0.1:8787" style="width:11rem" />
+          <input id="sync-email" type="email" placeholder="Email" style="width:8rem" />
+          <input id="sync-password" type="password" placeholder="Password" style="width:7rem" />
+          <button type="button" id="btn-sync-login">Sign in</button>
+          <button type="button" id="btn-sync-register">Register</button>
+          <button type="button" id="btn-sync-now">Sync</button>
+          <span id="sync-status" class="muted">Local only</span>
           <input id="import-file" type="file" accept="application/json,.json" hidden />
           <input id="import-openapi-file" type="file" accept="application/json,.json" hidden />
           <input id="import-proto-file" type="file" accept=".proto" hidden />

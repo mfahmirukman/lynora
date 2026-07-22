@@ -2,11 +2,13 @@
 resolver = "2"
 members = [
     "crates/lynora-core",
+    "crates/lynora-sync",
     "apps/lynora-desktop/src-tauri",
+    "apps/lynora-sync-server",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/mfahmirukman/lynora"
@@ -37,3 +39,6 @@ prost-reflect = { version = "0.14", features = ["serde"] }
 protox = "0.7"
 bytes = "1"
 tokio-stream = "0.1"
+axum = "0.7"
+tower-http = { version = "0.6", features = ["cors"] }
+chrono = { version = "0.4", features = ["serde"] }

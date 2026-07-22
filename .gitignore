@@ -6,3 +6,5 @@ dist/
 .DS_Store
 apps/lynora-desktop/dist/
 apps/lynora-desktop/src-tauri/target/
+lynora-sync.db
+*.db
