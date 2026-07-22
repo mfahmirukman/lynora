@@ -2,7 +2,7 @@
 
 Low-memory, Rust-based API workbench (Postman-like) for REST, GraphQL, and gRPC — desktop + web.
 
-**Status:** early development (milestone **0.1** — core + REST workbench).
+**Status:** milestone **0.1** in progress — `lynora-core` + Tauri desktop REST workbench.
 
 ## Docs
 
@@ -11,15 +11,23 @@ Low-memory, Rust-based API workbench (Postman-like) for REST, GraphQL, and gRPC 
 
 ## Develop
 
-```bash
-# Core library tests
-cargo test -p lynora-core
+### Core library
 
-# Desktop app (after Task 9 scaffold)
+```bash
+cargo test -p lynora-core
+```
+
+### Desktop (Linux / macOS)
+
+Prerequisites: [Tauri Linux deps](https://tauri.app/start/prerequisites/) (`webkit2gtk4.1-devel`, `librsvg2-devel`, etc.).
+
+```bash
 cd apps/lynora-desktop
 npm install
 npm run tauri dev
 ```
+
+Collections default to `~/.config/lynora/collections` (Linux). Create a collection, set `{{baseUrl}}` in the `local` environment, then Send.
 
 ## License
 

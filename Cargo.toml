@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/lynora-core",
+    "apps/lynora-desktop/src-tauri",
 ]
 
 [workspace.package]

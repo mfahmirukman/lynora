@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lynora</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">Lynora</div>
+        <div class="top-actions">
+          <select id="env-select" title="Environment">
+            <option value="">No environment</option>
+          </select>
+          <button type="button" id="btn-new-collection">New collection</button>
+          <button type="button" id="btn-import">Import Postman</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden />
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar">
+          <div class="sidebar-label">Collections</div>
+          <ul id="collection-list"></ul>
+          <div class="sidebar-label">Requests</div>
+          <ul id="request-list"></ul>
+          <button type="button" id="btn-new-request" class="ghost">+ New request</button>
+        </aside>
+
+        <section class="editor">
+          <div class="req-line">
+            <select id="method">
+              <option>GET</option>
+              <option>POST</option>
+              <option>PUT</option>
+              <option>PATCH</option>
+              <option>DELETE</option>
+              <option>HEAD</option>
+              <option>OPTIONS</option>
+            </select>
+            <input id="url" type="text" placeholder="https://api.example.com/{{path}}" />
+            <button type="button" id="btn-send" class="primary">Send</button>
+            <button type="button" id="btn-save">Save</button>
+          </div>
+          <input id="req-name" type="text" placeholder="Request name" />
+          <label class="block-label">Headers (JSON array of {key,value,enabled})</label>
+          <textarea id="headers" rows="4">[{"key":"Accept","value":"application/json","enabled":true}]</textarea>
+          <label class="block-label">Body</label>
+          <textarea id="body" rows="8" placeholder="{}"></textarea>
+        </section>
+
+        <section class="response">
+          <div class="resp-meta">
+            <span id="status">—</span>
+            <span id="duration"></span>
+          </div>
+          <pre id="response-body" class="response-body">Send a request to see the response.</pre>
+        </section>
+      </div>
+    </div>
+  </body>
+</html>
